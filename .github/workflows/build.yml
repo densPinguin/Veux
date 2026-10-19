@@ -1,0 +1,58 @@
+name: Build veux 5.4 QGKI baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential curl flex \
+            gcc-aarch64-linux-gnu libssl-dev \
+            libncurses-dev python3
+
+      - name: Get kernel source
+        run: |
+          git clone --depth=1 --branch veux-r-oss \
+            https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git kernel
+
+      - name: Get Android Clang 11
+        run: |
+          mkdir -p "$RUNNER_TEMP/clang"
+          curl -fL \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-qpr2-release/clang-r383902b1.tar.gz" \
+            -o "$RUNNER_TEMP/clang.tar.gz"
+          tar -xzf "$RUNNER_TEMP/clang.tar.gz" -C "$RUNNER_TEMP/clang"
+          echo "$RUNNER_TEMP/clang/bin" >> "$GITHUB_PATH"
+
+      - name: Configure kernel
+        run: |
+          cd kernel
+          make O=out ARCH=arm64 LLVM=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            vendor/veux-qgki-debug_defconfig
+
+      - name: Build kernel
+        run: |
+          cd kernel
+          make O=out ARCH=arm64 LLVM=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            -j2
+
+      - name: Save build outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: veux-kernel-build
+          path: |
+            kernel/out/.config
+            kernel/out/arch/arm64/boot/Image*
+            kernel/out/arch/arm64/boot/dts/**/*.dtb
+          if-no-files-found: warn
